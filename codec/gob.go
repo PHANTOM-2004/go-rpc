@@ -17,7 +17,7 @@ type GobCodec struct {
 }
 
 func NewGobCodec(conn io.ReadWriteCloser) Codec {
-  //这里其实也可以用conn作为writer, 但是我们希望指定缓冲区
+	// 这里其实也可以用conn作为writer, 但是我们希望指定缓冲区
 	buf := bufio.NewWriter(conn)
 	res := &GobCodec{
 		conn: conn,
@@ -39,12 +39,14 @@ func (c *GobCodec) ReadBody(body any) error {
 func (c *GobCodec) Write(h *Header, body any) (err error) {
 	defer func() {
 		// 写后刷新
+		// NOTE: 但是Flush的并发性依赖于conn的Writer类型, 因此调用时建议加锁
 		common.ShouldSucc(c.buf.Flush())
 		if err != nil {
 			common.ShouldSucc(c.Close())
 		}
 	}()
 
+	// NOTE: Encode方法中的mutex保证encode写入必然是并发安全的
 	if err := c.enc.Encode(h); err != nil {
 		log.Error("rpc codec: gob error encoding header: ", err)
 		return err
