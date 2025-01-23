@@ -129,7 +129,7 @@ func (s *Server) handleReq(mu *sync.Mutex, wg *sync.WaitGroup, c codec.Codec, re
 
 	log.Info(req.header, req.argv.Elem())
 	req.replyv = reflect.ValueOf(
-		fmt.Sprintf("go-rpc resp %d", req.header.SeqNum),
+		fmt.Sprintf("go-rpc resp as string %d", req.header.SeqNum),
 	)
 
 	s.sendResp(mu, c, req.header, req.replyv.Interface())
