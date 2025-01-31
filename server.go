@@ -2,12 +2,12 @@ package gorpc
 
 import (
 	"encoding/json"
-	"fmt"
 	"go-rpc/codec"
 	"go-rpc/common"
 	"io"
 	"net"
 	"reflect"
+	"strings"
 	"sync"
 
 	log "github.com/sirupsen/logrus"
@@ -32,9 +32,14 @@ type request struct {
 	header *codec.Header
 	argv   reflect.Value
 	replyv reflect.Value
+
+	mtype    *methodType
+	rservice *service
 }
 
-type Server struct{}
+type Server struct {
+	serviceIndex sync.Map
+}
 
 var DefaultOption = &Option{
 	MagicNumber: MagicNumber,
@@ -54,6 +59,19 @@ func Accept(l net.Listener) {
 	DefaultServer.Accept(l)
 }
 
+func Register(receiver any) {
+	DefaultServer.Register(receiver)
+}
+
+func (s *Server) Register(receiver any) {
+	svce := newService(receiver)
+	_, dup := s.serviceIndex.LoadOrStore(svce.name, svce)
+	if dup {
+		log.Panicf("service: [%s] already registered\n", svce.name)
+	}
+	// log.Debug("receiver: ", receiver, " registered")
+}
+
 func (s *Server) Accept(l net.Listener) {
 	for {
 		conn, err := l.Accept()
@@ -63,6 +81,24 @@ func (s *Server) Accept(l net.Listener) {
 		}
 		go s.ServeConn(conn)
 	}
+}
+
+func (s *Server) findService(method string) (*service, *methodType) {
+	dot := strings.LastIndex(method, ".")
+	if dot < 0 {
+		log.Panic("rpc error: method malformed: ", method)
+	}
+	serviceName, methodName := method[:dot], method[dot+1:]
+	svce, ok := s.serviceIndex.Load(serviceName)
+	if !ok {
+		log.Panic("rpc error: service not exists: ", serviceName)
+	}
+	rService := svce.(*service)
+	mType, ok := rService.method[methodName]
+	if !ok {
+		log.Panic("rpc error: method not exists: ", methodName)
+	}
+	return rService, mType
 }
 
 func (s *Server) ServeConn(conn io.ReadWriteCloser) {
@@ -128,10 +164,12 @@ func (s *Server) serveCodec(c codec.Codec) {
 func (s *Server) handleReq(mu *sync.Mutex, wg *sync.WaitGroup, c codec.Codec, req *request) {
 	defer wg.Done()
 
-	log.Info(req.header, req.argv.Elem())
-	req.replyv = reflect.ValueOf(
-		fmt.Sprintf("go-rpc resp as string %d", req.header.SeqNum),
-	)
+	err := req.rservice.call(req.mtype, req.argv, req.replyv)
+	if err != nil {
+		req.header.ErrMsg = err.Error()
+		s.sendResp(mu, c, req.header, invalidRequest)
+		return
+	}
 
 	s.sendResp(mu, c, req.header, req.replyv.Interface())
 }
@@ -157,10 +195,17 @@ func (s *Server) readReq(c codec.Codec) (*request, error) {
 		return nil, err
 	}
 	req := &request{header: h}
-	// TODO: 暂且把argv作为string处理
-	req.argv = reflect.New(reflect.TypeOf(""))
-	if err = c.ReadBody(req.argv.Interface()); err != nil {
-		log.Println("rpc server: read argv err:", err)
+	req.rservice, req.mtype = s.findService(h.ServiceMethod)
+	req.argv = req.mtype.newArgv()
+	req.replyv = req.mtype.newRepv()
+	argvptr := req.argv
+	if req.argv.Type().Kind() != reflect.Pointer {
+		// NOTE:保证是一个pointer, 这样才可以read
+		argvptr = req.argv.Addr()
+	}
+
+	if err = c.ReadBody(argvptr.Interface()); err != nil {
+		log.Error("rpc server: read argv err: ", err)
 		return req, err
 	}
 

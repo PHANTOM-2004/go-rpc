@@ -20,6 +20,7 @@ func (m *methodType) NumCalls() uint64 {
 	return atomic.LoadUint64(&m.numCalls)
 }
 
+// 注意, 返回的必然是指针类型
 func (m *methodType) newArgv() reflect.Value {
 	var argv reflect.Value
 	// new返回的是指针类型
@@ -33,12 +34,15 @@ func (m *methodType) newArgv() reflect.Value {
 }
 
 func (m *methodType) newRepv() reflect.Value {
+	// reply 必须是指针
 	replv := reflect.New(m.ReplyType.Elem())
 	switch m.ReplyType.Elem().Kind() {
 	case reflect.Map:
 		replv.Elem().Set(reflect.MakeMap(m.ReplyType.Elem()))
 	case reflect.Slice:
 		replv.Elem().Set(reflect.MakeSlice(m.ReplyType.Elem(), 0, 0))
+	case reflect.Chan:
+		log.Panic("should not use channel as reply")
 	}
 	return replv
 }
@@ -67,11 +71,13 @@ func (s *service) call(m *methodType, argv, replyv reflect.Value) error {
 }
 
 func newService(receiver any) *service {
+	log.Debug("new service creating")
 	s := new(service)
 	s.receiver = reflect.ValueOf(receiver)
 	s.name = reflect.Indirect(s.receiver).Type().Name()
 	log.Debug("receiver name: ", s.name)
-	s.typ = reflect.Indirect(s.receiver).Type() // NOTE:小心指针类型
+	s.typ = reflect.TypeOf(receiver) // NOTE:小心指针类型
+	log.Debug("receiver type: ", s.typ.Name())
 	if !ast.IsExported(s.name) {
 		log.Panicf("rpc server: method [%s] is not exported", s.name)
 	}
@@ -124,6 +130,11 @@ func (s *service) methodFilter(mType reflect.Type) bool {
 	if !common.IsExportedOrBuiltin(argType) ||
 		!common.IsExportedOrBuiltin(replyType) {
 		log.Debug(mType.Name(), "in/out unexported")
+		return false
+	}
+	// reply必须是指针
+	if replyType.Kind() != reflect.Pointer {
+		log.Debug(mType.Name(), "reply not pointer")
 		return false
 	}
 	return true
