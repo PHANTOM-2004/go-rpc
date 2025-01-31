@@ -82,8 +82,8 @@ func (s *Server) ServeConn(conn io.ReadWriteCloser) {
 	}
 
 	// 根据header得到对应的编码方法
-	constructor := codec.NewCodecFuncMap[opt.CodecType]
-	if constructor == nil {
+	constructor, ok := codec.NewCodecFuncMap[opt.CodecType]
+	if !ok {
 		log.Errorf("rpc server: invalid codec type [%s]", opt.CodecType)
 		return
 	}
@@ -99,6 +99,7 @@ func (s *Server) ServeConn(conn io.ReadWriteCloser) {
 // 尽力而为，只有在 header 解析失败时，才终止循环。
 
 func (s *Server) serveCodec(c codec.Codec) {
+	// 这里是每一个connection的不同request, 每一个connection持有一个response锁
 	mu := new(sync.Mutex)
 	wg := new(sync.WaitGroup)
 	for {

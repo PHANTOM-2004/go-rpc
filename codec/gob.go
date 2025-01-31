@@ -21,7 +21,9 @@ func NewGobCodec(conn io.ReadWriteCloser) Codec {
 	buf := bufio.NewWriter(conn)
 	res := &GobCodec{
 		conn: conn,
+    //decoder从reader之中读取
 		dec:  gob.NewDecoder(conn),
+    //encoder结果写入writer之中
 		enc:  gob.NewEncoder(buf),
 		buf:  buf,
 	}
@@ -29,7 +31,7 @@ func NewGobCodec(conn io.ReadWriteCloser) Codec {
 }
 
 func (c *GobCodec) ReadHeader(h *Header) error {
-	return c.dec.Decode(h)
+	return c.dec.Decode(h) //结果放入h
 }
 
 func (c *GobCodec) ReadBody(body any) error {
