@@ -1,11 +1,10 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	gorpc "go-rpc"
-	"go-rpc/codec"
 	"net"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -29,28 +28,23 @@ func main() {
 	go startServer(addr)
 
 	// client
-	conn, err := net.Dial("tcp", <-addr)
+	client, err := gorpc.Dial("tcp", <-addr)
 	if err != nil {
 		log.Panic(err)
 	}
-	defer func() { _ = conn.Close() }()
 
-	// send options
-	_ = json.NewEncoder(conn).Encode(gorpc.DefaultOption)
-	cc := codec.NewGobCodec(conn)
-	log.Info("option sent")
-
-	// send request & receive response
+	var wg sync.WaitGroup
 	for i := 0; i < 5; i++ {
-		h := &codec.Header{
-			ServiceMethod: "Foo.Sum.Bitch",
-			SeqNum:        uint64(i),
-		}
-		_ = cc.Write(h, fmt.Sprintf("gorpc req %d", h.SeqNum))
-
-		_ = cc.ReadHeader(h)
-		var reply string
-		_ = cc.ReadBody(&reply)
-		log.Info("reply:", reply)
+		wg.Add(1)
+		go func(j int) {
+			defer wg.Done()
+			args := fmt.Sprintf("gorpc req [%d]", j)
+			var reply string
+			err := client.Call("Foo.Bar", args, &reply)
+			if err != nil {
+				log.Panic(err)
+			}
+		}(i)
 	}
+	wg.Wait()
 }
