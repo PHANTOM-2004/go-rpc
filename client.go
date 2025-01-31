@@ -89,6 +89,9 @@ func (c *Client) Close() error {
 	return c.cc.Close()
 }
 
+// client.Go 的好处在于参数 done chan *Call 可以自定义缓冲区的大小
+// 可以给多个 client.Go 传入同一个 chan 对象，
+// 从而控制异步请求并发的数量。
 func (c *Client) Go(
 	serviceMethod string,
 	args, reply any, done chan *Call,
@@ -107,7 +110,7 @@ func (c *Client) Go(
 		Done:          done,
 	}
 
-  // NOTE:此处异步请求不必等待请求发送的完成
+	// NOTE:此处异步请求不必等待请求发送的完成
 	go c.send(call)
 
 	return call
