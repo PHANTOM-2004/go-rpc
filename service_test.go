@@ -1,6 +1,7 @@
 package gorpc
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -50,4 +51,18 @@ func TestNewService(t *testing.T) {
 		}
 	}()
 	_ = newService(&bar{})
+}
+
+func TestMethodTypeCall(t *testing.T) {
+	s := newService(Foo{})
+	mType := s.method["Sum"]
+	argv := mType.newArgv()
+	replyv := mType.newRepv()
+	argv.Set(reflect.ValueOf(Args{1, 293029}))
+	err := s.call(mType, argv, replyv)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	t.Log("Sum result:", *replyv.Interface().(*int))
 }

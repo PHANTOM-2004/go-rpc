@@ -50,7 +50,20 @@ type service struct {
 	method   map[string]*methodType
 }
 
-func (s *service) call(m *methodType) {
+func (s *service) call(m *methodType, argv, replyv reflect.Value) error {
+	atomic.AddUint64(&m.numCalls, 1)
+	f := m.method.Func
+	ins := []reflect.Value{
+		s.receiver,
+		argv,
+		replyv,
+	}
+	returnValues := f.Call(ins)
+	err := returnValues[0].Interface()
+	if err != nil {
+		return err.(error)
+	}
+	return nil
 }
 
 func newService(receiver any) *service {
