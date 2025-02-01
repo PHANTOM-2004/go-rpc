@@ -48,12 +48,16 @@ type Client struct {
 var _ io.Closer = (*Client)(nil)
 
 func NewClient(conn net.Conn, opt *Option) *Client {
+  var err error
+	if err != nil {
+		log.Panic("rpc client: conn error: ", err)
+	}
 	f := codec.NewCodecFuncMap[opt.CodecType]
 	if f == nil {
 		log.Panic("rpc client: unsupported CodecType:", opt.CodecType)
 	}
 
-	err := json.NewEncoder(conn).Encode(opt)
+	err = json.NewEncoder(conn).Encode(opt)
 	if err != nil {
 		log.Panic("rpc client: options error: ", err)
 	}
@@ -157,6 +161,7 @@ func (c *Client) Call(ctx context.Context, serviceMethod string, args, reply any
 
 	select {
 	case <-ctx.Done():
+		log.Debug("client call timeout, ctx.Done()")
 		c.removeCall(call.seq)
 		return errors.New("rpc client: call failed: " + ctx.Err().Error())
 	case callRes := <-call.Done:
@@ -171,6 +176,7 @@ func (c *Client) send(call *Call) {
 	c.sigMu.Lock()
 	defer c.sigMu.Unlock()
 
+	log.Debug("registering call")
 	seq, err := c.registerCall(call)
 	if err != nil {
 		call.Error = err
@@ -183,8 +189,11 @@ func (c *Client) send(call *Call) {
 	c.header.ErrMsg = ""
 
 	// encode and send
+	log.Debug("writing header")
 	err = c.cc.Write(&c.header, call.Args)
 	if err != nil {
+		log.Debug(err)
+		log.Debug("removing call")
 		call := c.removeCall(seq)
 		// 写入的时候只写入了一部分, client的接受goroutine
 		// 可能会先把call remove掉, 所以说removeCall操作
@@ -194,6 +203,7 @@ func (c *Client) send(call *Call) {
 			call.done()
 		}
 	}
+	log.Debug("send done")
 }
 
 // 解析0个或1各参数, 否则panic
@@ -264,11 +274,14 @@ func (c *Client) receive() {
 	for err == nil {
 		// 每次首先读取header
 		var h codec.Header
+		log.Debug("receive: reading header")
 		err = c.cc.ReadHeader(&h)
 		if err != nil {
+			log.Error(err)
 			break
 		}
 
+		log.Debug("receive: removing call")
 		call := c.removeCall(h.SeqNum)
 		switch {
 		case call == nil:
@@ -280,14 +293,18 @@ func (c *Client) receive() {
 			//那么请求的时候就会踢出pending, 此时只读到了部分
 			//消息, 所以说removeCall之后得到call是空的,
 			//此时抛弃Body消息
+			log.Debug("receive: nil Call")
 			err = c.cc.ReadBody(nil) // NOTE: discard
 
 		case h.ErrMsg != "":
+			log.Debug("receive: error occurs")
 			call.Error = errors.New(h.ErrMsg)
 			err = c.cc.ReadBody(nil)
 			call.done()
 
 		default:
+			log.Debug("receive: default")
+			log.Debug("receive: reading body")
 			err = c.cc.ReadBody(call.Reply)
 			if err != nil {
 				call.Error = errors.New("call error: reading body: " +
@@ -298,6 +315,7 @@ func (c *Client) receive() {
 
 	}
 
+	log.Debug("receive: end")
 	// error, or reach EOF(ErrEOF)
 	c.terminateCalls(err)
 }
