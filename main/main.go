@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	gorpc "go-rpc"
@@ -61,7 +62,7 @@ func main() {
 			defer wg.Done()
 			args := j
 			reply := &[]int{}
-			err := client.Call("Foo.Bar", args, reply)
+			err := client.Call(context.TODO(), "Foo.Bar", args, reply)
 			if err != nil {
 				log.Errorln(err)
 				return
@@ -78,7 +79,7 @@ func main() {
 			defer wg.Done()
 			args := strconv.Itoa(i)
 			var replyv map[string]int
-			err := client.Call("Foo.Goo", args, &replyv)
+			err := client.Call(context.TODO(), "Foo.Goo", args, &replyv)
 			if err != nil {
 				log.Errorln(err)
 				return

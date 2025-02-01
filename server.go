@@ -2,6 +2,7 @@ package gorpc
 
 import (
 	"encoding/json"
+	"fmt"
 	"go-rpc/codec"
 	"go-rpc/common"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -26,6 +28,7 @@ const MagicNumber = 190514
 type Option struct {
 	MagicNumber int
 	CodecType   codec.Type
+	TimeOut     time.Duration
 }
 
 type request struct {
@@ -44,6 +47,7 @@ type Server struct {
 var DefaultOption = &Option{
 	MagicNumber: MagicNumber,
 	CodecType:   codec.GobType,
+	TimeOut:     time.Second * 0,
 }
 
 var (
@@ -125,7 +129,7 @@ func (s *Server) ServeConn(conn io.ReadWriteCloser) {
 	}
 
 	// 由对应的编码方法进行serve每一个connection
-	s.serveCodec(constructor(conn))
+	s.serveCodec(constructor(conn), &opt)
 }
 
 // handleRequest 使用了协程并发执行请求。
@@ -134,7 +138,7 @@ func (s *Server) ServeConn(conn io.ReadWriteCloser) {
 // 在这里使用锁(mutex)保证。
 // 尽力而为，只有在 header 解析失败时，才终止循环。
 
-func (s *Server) serveCodec(c codec.Codec) {
+func (s *Server) serveCodec(c codec.Codec, opt *Option) {
 	// 这里是每一个connection的不同request, 每一个connection持有一个response锁
 	mu := new(sync.Mutex)
 	wg := new(sync.WaitGroup)
@@ -154,24 +158,51 @@ func (s *Server) serveCodec(c codec.Codec) {
 
 		wg.Add(1)
 		// 对于每一个合法请求, 进行对应的回应
-		go s.handleReq(mu, wg, c, req)
+		go s.handleReq(mu, wg, c, req, opt)
 	}
 
 	wg.Wait()
 	common.ShouldSucc(c.Close())
 }
 
-func (s *Server) handleReq(mu *sync.Mutex, wg *sync.WaitGroup, c codec.Codec, req *request) {
+func (s *Server) handleReq(mu *sync.Mutex, wg *sync.WaitGroup, c codec.Codec, req *request, opt *Option) {
 	defer wg.Done()
 
-	err := req.rservice.call(req.mtype, req.argv, req.replyv)
-	if err != nil {
-		req.header.ErrMsg = err.Error()
-		s.sendResp(mu, c, req.header, invalidRequest)
+	// NOTE: 拆分调用与回复, called接收到就没有超时
+	called := make(chan struct{})
+	sent := make(chan struct{})
+
+	go func() {
+		defer func() { sent <- struct{}{} }()
+
+		err := req.rservice.call(req.mtype, req.argv, req.replyv)
+		called <- struct{}{}
+
+		if err != nil {
+			req.header.ErrMsg = err.Error()
+			s.sendResp(mu, c, req.header, invalidRequest)
+			return
+		}
+
+		s.sendResp(mu, c, req.header, req.replyv.Interface())
+	}()
+
+	if opt.TimeOut == 0 {
+		// 没有限制
+		<-called
+		<-sent
 		return
 	}
 
-	s.sendResp(mu, c, req.header, req.replyv.Interface())
+	select {
+	case <-time.After(opt.TimeOut):
+		req.header.ErrMsg = fmt.Sprintf("rpc server: request handle timeout: expect within %s", opt.TimeOut)
+		s.sendResp(mu, c, req.header, invalidRequest)
+
+	case <-called:
+		// 等待接收
+		<-sent
+	}
 }
 
 // helper 读取request header

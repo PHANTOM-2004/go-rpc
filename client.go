@@ -1,12 +1,15 @@
 package gorpc
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go-rpc/codec"
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -67,16 +70,49 @@ func NewClient(conn net.Conn, opt *Option) *Client {
 	return client
 }
 
-// 这里的效果是实现0或者1 的option作为可选参数, 而非多个option
-func Dial(network, addr string, opts ...*Option) (*Client, error) {
+type newClientFunc = func(net.Conn, *Option) *Client
+
+func dialTimeout(constructClient newClientFunc, network, addr string, opts ...*Option) (*Client, error) {
 	opt := parseOption(opts...)
-	conn, err := net.Dial(network, addr)
+	conn, err := net.DialTimeout(
+		network,
+		addr,
+		opt.TimeOut,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	client := NewClient(conn, opt)
-	return client, nil
+	clientDone := make(chan struct{})
+	var client *Client
+	go func() {
+		client = constructClient(conn, opt)
+		clientDone <- struct{}{}
+	}()
+
+	if opt.TimeOut == 0 {
+		// 没有限制
+		<-clientDone
+		return client, nil
+	}
+
+	select {
+	case <-clientDone:
+		return client, nil
+	case <-time.After(opt.TimeOut):
+		if err := conn.Close(); err != nil {
+			log.Error(err)
+		}
+		return nil, fmt.Errorf(
+			"rpc client: connect timeout: expect within %s",
+			opt.TimeOut,
+		)
+	}
+}
+
+// 这里的效果是实现0或者1 的option作为可选参数, 而非多个option
+func Dial(network, addr string, opts ...*Option) (*Client, error) {
+	return dialTimeout(NewClient, network, addr, opts...)
 }
 
 func (c *Client) Close() error {
@@ -116,9 +152,16 @@ func (c *Client) Go(
 	return call
 }
 
-func (c *Client) Call(serviceMethod string, args, reply any) error {
-	call := <-c.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done
-	return call.Error
+func (c *Client) Call(ctx context.Context, serviceMethod string, args, reply any) error {
+	call := c.Go(serviceMethod, args, reply, make(chan *Call, 1))
+
+	select {
+	case <-ctx.Done():
+		c.removeCall(call.seq)
+		return errors.New("rpc client: call failed: " + ctx.Err().Error())
+	case callRes := <-call.Done:
+		return callRes.Error
+	}
 }
 
 // 发送消息

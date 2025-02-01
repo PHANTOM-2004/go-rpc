@@ -1,6 +1,7 @@
 package gorpc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -40,11 +41,17 @@ func startServer(addr chan string) {
 	Accept(l)
 }
 
+var once sync.Once
+
 func TestServer(t *testing.T) {
 	log.SetLevel(log.DebugLevel)
 	// server launched
 	addr := make(chan string)
-	Register(&Goo{})
+	once.Do(
+		func() {
+			Register(&Goo{})
+		},
+	)
 
 	go startServer(addr)
 
@@ -61,7 +68,7 @@ func TestServer(t *testing.T) {
 			defer wg.Done()
 			args := j
 			reply := &[]int{}
-			err := client.Call("Goo.Bar", args, reply)
+			err := client.Call(context.TODO(), "Goo.Bar", args, reply)
 			if err != nil {
 				log.Errorln(err)
 				return
@@ -78,7 +85,7 @@ func TestServer(t *testing.T) {
 			defer wg.Done()
 			args := strconv.Itoa(i)
 			var replyv map[string]int
-			err := client.Call("Goo.Goo", args, &replyv)
+			err := client.Call(context.TODO(), "Goo.Goo", args, &replyv)
 			if err != nil {
 				log.Errorln(err)
 				return
