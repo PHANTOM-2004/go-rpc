@@ -21,6 +21,7 @@ func NewHTTPClient(conn net.Conn, opt *Option) *Client {
 	// before switching to RPC protocol.
 	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "CONNECT"})
 	if err == nil && resp.Status == connected {
+		log.Debug("client received response: ", resp.Status)
 		return NewClient(conn, opt)
 	}
 	if err == nil {
