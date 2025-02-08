@@ -48,10 +48,7 @@ type Client struct {
 var _ io.Closer = (*Client)(nil)
 
 func NewClient(conn net.Conn, opt *Option) *Client {
-  var err error
-	if err != nil {
-		log.Panic("rpc client: conn error: ", err)
-	}
+	var err error
 	f := codec.NewCodecFuncMap[opt.CodecType]
 	if f == nil {
 		log.Panic("rpc client: unsupported CodecType:", opt.CodecType)

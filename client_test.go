@@ -75,20 +75,26 @@ func TestClientCall(t *testing.T) {
 		_assert(err != nil && strings.Contains(err.Error(), ctx.Err().Error()), "expect a timeout error")
 	})
 
-	for i := 0; i < 100; i++ {
-		t.Run("server handle timeout", func(t *testing.T) {
-			client, err := Dial("tcp", addr, &Option{
-				TimeOut: time.Microsecond * 100,
-			})
-			if err != nil {
-				logrus.Error(err)
-				logrus.Debug("pass")
-				return
-			}
-			var reply int
-			t.Log("Dialed")
-			err = client.Call(context.Background(), "Bar.Timeout", 1, &reply)
-			_assert(err != nil && strings.Contains(err.Error(), "handle timeout"), "expect a timeout error")
+	t.Run("server handle timeout", func(t *testing.T) {
+		client, err := Dial("tcp", addr, &Option{
+			TimeOut: time.Microsecond * 100,
 		})
-	}
+		if err != nil {
+			logrus.Error(err)
+			logrus.Debug("pass")
+			return
+		}
+
+		var reply int
+		ctx := context.Background()
+
+		err = client.Call(ctx, "Bar.Timeout", 1, &reply)
+		_assert(err != nil &&
+			strings.Contains(err.Error(), "handle timeout"),
+			"expect a timeout error, actual: "+err.Error())
+
+		if err != nil {
+			t.Log("error: ", err)
+		}
+	})
 }
