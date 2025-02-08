@@ -106,7 +106,7 @@ func (s *Server) findService(method string) (*service, *methodType) {
 }
 
 func (s *Server) ServeConn(conn io.ReadWriteCloser) {
-	defer func() { common.ShouldSucc(conn.Close()) }()
+	defer func() { conn.Close() }()
 
 	// 1. 第一步从conn中读出信息, 首先解码header的JSON格式
 	var opt Option
@@ -149,6 +149,7 @@ func (s *Server) serveCodec(c codec.Codec, opt *Option) {
 		if err != nil {
 			if req == nil {
 				// 直接关闭连接, request读不到内容
+				log.Info("rpc server: connection closed: ", err)
 				break
 			}
 			req.header.ErrMsg = err.Error()

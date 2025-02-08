@@ -274,7 +274,8 @@ func (c *Client) receive() {
 		log.Debug("receive: reading header")
 		err = c.cc.ReadHeader(&h)
 		if err != nil {
-			log.Error(err)
+      log.Error("rpc client: receive: ", err)
+      log.Info("rpc client: connection closed: ", err)
 			break
 		}
 
