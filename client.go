@@ -101,6 +101,7 @@ func dialTimeout(constructClient newClientFunc, network, addr string, opts ...*O
 	case <-clientDone:
 		return client, nil
 	case <-time.After(opt.TimeOut):
+		// _ = conn.Close()
 		if err := conn.Close(); err != nil {
 			log.Error(err)
 		}
@@ -114,6 +115,12 @@ func dialTimeout(constructClient newClientFunc, network, addr string, opts ...*O
 // 这里的效果是实现0或者1 的option作为可选参数, 而非多个option
 func Dial(network, addr string, opts ...*Option) (*Client, error) {
 	return dialTimeout(NewClient, network, addr, opts...)
+}
+
+func (c *Client) Available() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.shutdown && !c.closing
 }
 
 func (c *Client) Close() error {
@@ -274,8 +281,8 @@ func (c *Client) receive() {
 		log.Debug("receive: reading header")
 		err = c.cc.ReadHeader(&h)
 		if err != nil {
-      log.Error("rpc client: receive: ", err)
-      log.Info("rpc client: connection closed: ", err)
+			// log.Debug("rpc client: receive: ", err)
+			log.Info("rpc client: connection closed: ", err)
 			break
 		}
 
