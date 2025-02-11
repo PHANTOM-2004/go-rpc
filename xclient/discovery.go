@@ -9,6 +9,7 @@ type SelectStrategy int
 const (
 	Random SelectStrategy = iota
 	RoundRobin
+	ConsHash
 )
 
 type Discovery interface {
@@ -32,6 +33,9 @@ func NewMultiServerDiscovery(servers []string, mode SelectStrategy) *MultiServer
 		res.strategy = NewLBRandom(servers)
 	case RoundRobin:
 		res.strategy = NewLBRoundRobin(servers)
+	case ConsHash:
+		// NOTE: 暂且设置100个虚拟节点
+		res.strategy = NewLBConsHash(servers, 100)
 	default:
 		panic("unsupported strategy")
 	}

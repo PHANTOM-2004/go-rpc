@@ -54,7 +54,7 @@ func foo(ctx context.Context, xc *xclient.XClient, typ, serviceMethod string, ar
 
 // 调用单个实例的方法
 func call(addr1, addr2 string) {
-	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2}, xclient.Random)
+	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2}, xclient.ConsHash)
 	xc := xclient.NewXClient(d, nil)
 	ctx := context.Background()
 
@@ -104,6 +104,6 @@ func main() {
 	addr2 := <-ch2
 
 	time.Sleep(time.Second)
-	// call(addr1, addr2)
+	call(addr1, addr2)
 	broadcast(addr1, addr2)
 }
