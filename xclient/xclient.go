@@ -2,10 +2,13 @@ package xclient
 
 import (
 	"context"
+	"fmt"
 	gorpc "go-rpc"
 	"io"
 	"reflect"
 	"sync"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type (
@@ -14,8 +17,7 @@ type (
 )
 
 type XClient struct {
-	d    Discovery
-	mode SelectMode
+	d Discovery
 
 	opt     *Option
 	mu      sync.Mutex
@@ -24,10 +26,9 @@ type XClient struct {
 
 var _ io.Closer = (*XClient)(nil)
 
-func NewXClient(d Discovery, mode SelectMode, opt *Option) *XClient {
+func NewXClient(d Discovery, opt *Option) *XClient {
 	return &XClient{
 		d:       d,
-		mode:    mode,
 		opt:     opt,
 		clients: make(map[string]*Client),
 	}
@@ -74,7 +75,9 @@ func (xc *XClient) call(ctx context.Context, rpcAddr string, serviceMethod strin
 }
 
 func (xc *XClient) Call(ctx context.Context, serviceMethod string, args, reply any) error {
-	rpcAddr, err := xc.d.Get(xc.mode)
+	req := serviceMethod + "#" + fmt.Sprintf("%v", args)
+
+	rpcAddr, err := xc.d.Get(req)
 	if err != nil {
 		return err
 	}
@@ -86,6 +89,7 @@ func (xc *XClient) Call(ctx context.Context, serviceMethod string, args, reply a
 func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, reply any) error {
 	servers, err := xc.d.GetAll()
 	if err != nil {
+		log.Error(err)
 		return err
 	}
 
@@ -99,7 +103,10 @@ func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, re
 
 	for _, addr := range servers {
 		wg.Add(1)
+
 		go func(rpcAddr string) {
+			// log.Info("broadcast start: ", rpcAddr)
+			// defer log.Info("broadcast done: ", rpcAddr)
 			defer wg.Done()
 			var clonedReply any
 			if reply != nil {
@@ -119,9 +126,12 @@ func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, re
 				once.Do(func() {
 					t := reflect.ValueOf(clonedReply).Elem()
 					reflect.ValueOf(reply).Elem().Set(t)
+					log.Debug("Broadcast: get response: ", t)
 				})
 			}
 		}(addr)
+
+		// log.Info("Broadcasting to: ", addr)
 	}
 
 	wg.Wait()

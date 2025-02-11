@@ -42,6 +42,8 @@ func foo(ctx context.Context, xc *xclient.XClient, typ, serviceMethod string, ar
 		err = xc.Call(ctx, serviceMethod, args, &reply)
 	case "broadcast":
 		err = xc.Broadcast(ctx, serviceMethod, args, &reply)
+	default:
+		panic("unsupported call method")
 	}
 	if err != nil {
 		log.Printf("%s %s error: %v", typ, serviceMethod, err)
@@ -52,8 +54,8 @@ func foo(ctx context.Context, xc *xclient.XClient, typ, serviceMethod string, ar
 
 // 调用单个实例的方法
 func call(addr1, addr2 string) {
-	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
-	xc := xclient.NewXClient(d, xclient.Random, nil)
+	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2}, xclient.Random)
+	xc := xclient.NewXClient(d, nil)
 	ctx := context.Background()
 
 	defer func() { _ = xc.Close() }()
@@ -70,8 +72,8 @@ func call(addr1, addr2 string) {
 }
 
 func broadcast(addr1, addr2 string) {
-	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
-	xc := xclient.NewXClient(d, xclient.Random, nil)
+	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2}, xclient.RoundRobin)
+	xc := xclient.NewXClient(d, nil)
 	ctx := context.Background()
 	defer func() { _ = xc.Close() }()
 	var wg sync.WaitGroup
@@ -90,6 +92,8 @@ func broadcast(addr1, addr2 string) {
 
 func main() {
 	log.SetFlags(0)
+	// logrus.SetLevel((logrus.DebugLevel))
+
 	ch1 := make(chan string)
 	ch2 := make(chan string)
 	// start two servers
@@ -100,6 +104,6 @@ func main() {
 	addr2 := <-ch2
 
 	time.Sleep(time.Second)
-	call(addr1, addr2)
+	// call(addr1, addr2)
 	broadcast(addr1, addr2)
 }
